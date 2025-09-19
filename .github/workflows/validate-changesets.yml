@@ -1,0 +1,155 @@
+name: Validate Changesets
+
+on:
+  pull_request:
+    paths:
+      - '.changeset/*.md'
+
+concurrency:
+  group: validate-changesets-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate-changesets:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      models: read
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Collect changed changeset files
+        id: changed
+        shell: bash -eo pipefail
+        run: |
+          git diff --name-only --diff-filter=AM \
+            "${{ github.event.pull_request.base.sha }}...${{ github.sha }}" \
+            -- '.changeset/*.md' | grep -v 'README.md' > changeset_files.txt || true
+
+          if [ -s changeset_files.txt ]; then
+            echo "has_changesets=true" >> "$GITHUB_OUTPUT"
+            # concat for file_input
+            > all_changesets.md
+            while IFS= read -r f; do
+              [ -f "$f" ] || continue
+              printf -- '--- File: %s ---\n' "$f" >> all_changesets.md
+              cat "$f" >> all_changesets.md
+              printf '\n' >> all_changesets.md
+            done < changeset_files.txt
+
+            # comma-separated for prompt variables
+            files_csv=$(paste -sd, changeset_files.txt)
+            echo "files_csv=$files_csv" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changesets=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate changeset format with AI
+        if: steps.changed.outputs.has_changesets == 'true'
+        id: ai
+        uses: actions/ai-inference@v1
+        with:
+          # Pin a model if desired:
+          # model: openai/gpt-4o-mini
+          prompt-file: .github/prompts/validate-changeset.prompt.yml
+          # Structured vars available to the prompt.yml via {{...}}
+          input: |
+            pr_number: ${{ github.event.pull_request.number }}
+            repo: ${{ github.repository }}
+            files_csv: ${{ steps.changed.outputs.files_csv }}
+          # Large content via file_input (prompt.yml can reference {{changesets}})
+          file_input: |
+            changesets: all_changesets.md
+          max-tokens: 1000
+
+      - name: Read AI response file
+        if: steps.changed.outputs.has_changesets == 'true'
+        id: parsed
+        shell: bash -eo pipefail
+        run: |
+          resp_file="${{ steps.ai.outputs.response-file }}"
+          if [ -z "$resp_file" ] || [ ! -f "$resp_file" ]; then
+            echo "AI response file missing" >&2
+            echo 'valid=false' >> "$GITHUB_OUTPUT"
+            echo 'json={"valid":false,"errors":["Missing AI response file"],"suggestions":[]}' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Show raw for debugging on run page
+          echo "---- AI raw response ----"
+          sed -n '1,200p' "$resp_file" || true
+          echo "-------------------------"
+
+          # Try to normalize to one-line JSON for github-script
+          # If it's already one line, this is a no-op.
+          json=$(tr -d '\n' < "$resp_file" || cat "$resp_file")
+          echo "json<<JSON" >> "$GITHUB_OUTPUT"
+          echo "$json" >> "$GITHUB_OUTPUT"
+          echo "JSON" >> "$GITHUB_OUTPUT"
+
+          # Try to detect validity flag (best-effort; schema should enforce it)
+          if echo "$json" | grep -q '"valid":[[:space:]]*true'; then
+            echo "valid=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "valid=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment validation results on PR
+        if: steps.changed.outputs.has_changesets == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const raw = `${{ steps.parsed.outputs.json }}`;
+            let validation;
+            try {
+              validation = JSON.parse(raw);
+            } catch (e) {
+              validation = { valid: false, errors: ["Failed to parse AI JSON"], suggestions: [], _raw: raw };
+            }
+
+            let comment = "## 📝 Changeset Validation Results\n\n";
+            if (validation.valid) {
+              comment += "✅ **All changesets are properly formatted!**\n\n";
+            } else {
+              comment += "❌ **Changeset validation failed**\n\n";
+              if (Array.isArray(validation.errors) && validation.errors.length) {
+                comment += "### Errors Found:\n";
+                for (const e of validation.errors) comment += `- ${e}\n`;
+                comment += "\n";
+              }
+            }
+            if (Array.isArray(validation.suggestions) && validation.suggestions.length) {
+              comment += "### Suggestions:\n";
+              for (const s of validation.suggestions) comment += `- ${s}\n`;
+              comment += "\n";
+            }
+            comment += "---\n";
+            comment += "*📖 See [Astro's changeset guide](https://contribute.docs.astro.build/docs-for-code-changes/changesets/) for details.*";
+
+            // Upsert bot comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const marker = "## 📝 Changeset Validation Results";
+            const prev = comments.find(c => c.user?.type === "Bot" && c.body?.includes(marker));
+            if (prev) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: prev.id, body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: context.issue.number, body: comment
+              });
+            }
+
+            if (!validation.valid) {
+              core.setFailed("Changeset validation failed - see PR comment for details");
+            }

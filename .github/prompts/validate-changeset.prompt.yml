@@ -1,0 +1,82 @@
+# .github/prompts/validate-changeset.prompt.yml
+# Works with actions/ai-inference@v1
+# Inputs expected from the workflow:
+#   file_input:
+#     changesets: all_changesets.md
+
+model: openai/gpt-4o
+responseFormat: json_schema
+jsonSchema: |
+  {
+    "name": "changeset_validation",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "valid": {
+          "type": "boolean",
+          "description": "Whether all changesets are properly formatted"
+        },
+        "errors": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of specific format errors found"
+        },
+        "suggestions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of improvement suggestions"
+        }
+      },
+      "required": ["valid", "errors", "suggestions"],
+      "additionalProperties": false
+    }
+  }
+
+messages:
+  - role: system
+    content: |
+      You are a changeset format validator for the Astro project. Validate changesets against these requirements:
+
+      REQUIRED FORMAT:
+      1) Must start with YAML frontmatter:
+         ---
+         'package-name': patch|minor|major
+         ---
+         (The opening '---' must be the first non-whitespace line; the closing '---' must appear before any description.)
+
+      2) Description must begin with a present-tense verb from:
+         "Adds", "Removes", "Fixes", "Updates", "Refactors", "Improves", "Deprecates"
+
+      3) The description must describe user-facing impact, not internal implementation details.
+
+      4) Change types:
+         - patch: Bug fixes, small improvements
+         - minor: New features
+         - major: Breaking changes
+
+      Additional validation details:
+      - The YAML frontmatter must contain exactly one key (the package name) mapped to one of: patch, minor, major.
+      - The package name must be a valid package in the Astro ecosystem (e.g., "astro" or a scoped package like "@astrojs/..."). If the name looks invalid (empty, contains spaces, or obviously unrelated), flag it.
+      - After the closing frontmatter, the next non-empty line is considered the start of the description.
+      - “User-facing” means the text speaks to end users or integrators (e.g., “Fixes issue where …”), not internal notes like “Refactor utils”, “Rename variable”, “Update build script”.
+
+      Output policy:
+      - Return ONLY JSON conforming to the provided schema (no prose, no markdown).
+      - If ANY blocking format issue exists in ANY file, set "valid": false and list each issue in "errors".
+      - Use "suggestions" for non-blocking improvements (tone, brevity, clarity).
+
+  - role: user
+    content: |
+      Validate the changeset files below against the Astro changeset format requirements.
+
+      {{changesets}}
+
+      For each file, verify:
+      - Proper YAML frontmatter structure
+      - Valid package name (should be 'astro' or another valid Astro package, e.g., @astrojs/*)
+      - Appropriate change type (patch/minor/major)
+      - Description starts with a recommended present-tense verb
+      - Content focuses on user impact, not implementation details
+
+      Analyze all provided files and respond with validation results.
