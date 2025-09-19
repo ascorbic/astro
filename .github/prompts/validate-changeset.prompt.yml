@@ -59,7 +59,7 @@ messages:
       - The YAML frontmatter must contain exactly one key (the package name) mapped to one of: patch, minor, major.
       - The package name must be a valid package in the Astro ecosystem (e.g., "astro" or a scoped package like "@astrojs/..."). If the name looks invalid (empty, contains spaces, or obviously unrelated), flag it.
       - After the closing frontmatter, the next non-empty line is considered the start of the description.
-      - “User-facing” means the text speaks to end users or integrators (e.g., “Fixes issue where …”), not internal notes like “Refactor utils”, “Rename variable”, “Update build script”.
+      - "User-facing" means the text speaks to end users or integrators (e.g., "Fixes issue where …"), not internal notes like "Refactor utils", "Rename variable", "Update build script".
 
       Output policy:
       - Return ONLY JSON conforming to the provided schema (no prose, no markdown).
@@ -67,16 +67,18 @@ messages:
       - Use "suggestions" for non-blocking improvements (tone, brevity, clarity).
 
   - role: user
-    content: |
+    content: >-
       Validate the changeset files below against the Astro changeset format requirements.
+
 
       {{changesets}}
 
-      For each file, verify:
-      - Proper YAML frontmatter structure
-      - Valid package name (should be 'astro' or another valid Astro package, e.g., @astrojs/*)
-      - Appropriate change type (patch/minor/major)
-      - Description starts with a recommended present-tense verb
-      - Content focuses on user impact, not implementation details
+
+      For each file, verify proper YAML frontmatter structure, valid package name
+      (should be 'astro' or another valid Astro package, e.g., @astrojs/*),
+      appropriate change type (patch/minor/major), description starts with a
+      recommended present-tense verb, and content focuses on user impact, not
+      implementation details.
+
 
       Analyze all provided files and respond with validation results.
