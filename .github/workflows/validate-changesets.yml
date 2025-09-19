@@ -34,15 +34,15 @@ jobs:
 
           if [ -s changeset_files.txt ]; then
             echo "has_changesets=true" >> "$GITHUB_OUTPUT"
-            # Read changeset contents into output variable
-            echo "changeset_content<<CHANGESET_EOF" >> "$GITHUB_OUTPUT"
+            # Create content with safe delimiters (no YAML conflicts)
+            > changesets_content.txt
             while IFS= read -r f; do
               [ -f "$f" ] || continue
-              printf -- '=== File: %s ===\n' "$f" >> "$GITHUB_OUTPUT"
-              cat "$f" >> "$GITHUB_OUTPUT"
-              printf '\n' >> "$GITHUB_OUTPUT"
+              printf -- 'CHANGESET_FILE_START: %s\n' "$f" >> changesets_content.txt
+              # Replace problematic YAML delimiters with safe alternatives
+              sed 's/^---$/YAML_DELIMITER/g' "$f" >> changesets_content.txt
+              printf '\nCHANGESET_FILE_END\n\n' >> changesets_content.txt
             done < changeset_files.txt
-            echo "CHANGESET_EOF" >> "$GITHUB_OUTPUT"
           else
             echo "has_changesets=false" >> "$GITHUB_OUTPUT"
           fi
@@ -52,23 +52,9 @@ jobs:
         id: ai
         uses: actions/ai-inference@v1
         with:
-          model: github/gpt-5-mini
-          system-prompt: |
-            You are a changeset format validator for the Astro project.
-
-            Validate changesets against these requirements:
-            1) Must start with YAML frontmatter (three dashes, package name and type, three dashes)
-            2) Description must begin with present-tense verb: Adds, Removes, Fixes, Updates, Refactors, Improves, Deprecates
-            3) Must describe user-facing impact, not internal implementation details
-            4) Change types: patch (bug fixes), minor (new features), major (breaking changes)
-
-            Return JSON with: {"valid": boolean, "errors": [strings], "suggestions": [strings]}. You response must be valid JSON only with no extra commentary or code blocks.
-          prompt: |
-            Validate the following changeset files for proper format:
-
-            ${{ steps.changed.outputs.changeset_content }}
-
-            Check each file for proper format and respond with validation results.
+          prompt-file: .github/prompts/validate-changeset.prompt.yml
+          file_input: |
+            changesets: changesets_content.txt
           max-tokens: 1000
 
       - name: Read AI response file
