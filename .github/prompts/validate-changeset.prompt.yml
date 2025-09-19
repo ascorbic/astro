@@ -4,20 +4,10 @@ messages:
       You are a changeset format validator for the Astro project. Validate changesets against these requirements:
 
       REQUIRED FORMAT:
-      1) Must start with YAML frontmatter:
-         ---
-         'package-name': patch|minor|major
-         ---
-
-      2) Description must begin with a present-tense verb:
-         "Adds", "Removes", "Fixes", "Updates", "Refactors", "Improves", "Deprecates"
-
-      3) The description must describe user-facing impact, not internal implementation details.
-
-      4) Change types:
-         - patch: Bug fixes, small improvements
-         - minor: New features
-         - major: Breaking changes
+      1) Must start with YAML frontmatter with three dashes at start and end
+      2) Description must begin with a present-tense verb: Adds, Removes, Fixes, Updates, Refactors, Improves, Deprecates
+      3) The description must describe user-facing impact, not internal implementation details
+      4) Change types: patch (bug fixes), minor (new features), major (breaking changes)
 
       Return ONLY JSON conforming to the provided schema.
 
