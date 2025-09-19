@@ -25,8 +25,9 @@ jobs:
 
       - name: Collect changed changeset files
         id: changed
-        shell: bash -eo pipefail
+        shell: bash
         run: |
+          set -eo pipefail
           git diff --name-only --diff-filter=AM \
             "${{ github.event.pull_request.base.sha }}...${{ github.sha }}" \
             -- '.changeset/*.md' | grep -v 'README.md' > changeset_files.txt || true
@@ -70,8 +71,9 @@ jobs:
       - name: Read AI response file
         if: steps.changed.outputs.has_changesets == 'true'
         id: parsed
-        shell: bash -eo pipefail
+        shell: bash
         run: |
+          set -eo pipefail
           resp_file="${{ steps.ai.outputs.response-file }}"
           if [ -z "$resp_file" ] || [ ! -f "$resp_file" ]; then
             echo "AI response file missing" >&2
