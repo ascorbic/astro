@@ -1,57 +1,6 @@
 messages:
- - role: system
-   content: |
-     You are a changeset format validator for the Astro project. Validate changesets against these requirements:
-
-     REQUIRED FORMAT:
-     1) Must start with YAML frontmatter with three dashes at start and end
-     2) Description must begin with a present-tense verb: Adds, Removes, Fixes, Updates, Refactors, Improves, Deprecates
-     3) The description must describe user-facing impact, not internal implementation details
-     4) Change types: patch (bug fixes), minor (new features), major (breaking changes)
-
-     Return ONLY JSON conforming to the provided schema.
-
- - role: user
-   content: |-
-     Validate the changeset files below against the Astro changeset format requirements.
-
-     {{changesets}}
-
-     For each file, verify proper YAML frontmatter structure, valid package name, appropriate change type, description starts with a recommended present-tense verb, and content focuses on user impact.
-
+  - role: system
+    content: You are a changeset format validator for the Astro project.
+  - role: user
+    content: 'Validate the changeset files: {{changesets}}'
 model: openai/gpt-4o
-responseFormat: json_schema
-jsonSchema: |-
- {
-  "name": "changeset_validation",
-  "strict": true,
-  "schema": {
-   "type": "object",
-   "properties": {
-    "valid": {
-     "type": "boolean",
-     "description": "Whether all changesets are properly formatted"
-    },
-    "errors": {
-     "type": "array",
-     "items": {
-      "type": "string"
-     },
-     "description": "List of specific format errors found"
-    },
-    "suggestions": {
-     "type": "array",
-     "items": {
-      "type": "string"
-     },
-     "description": "List of improvement suggestions"
-    }
-   },
-   "additionalProperties": false,
-   "required": [
-    "valid",
-    "errors",
-    "suggestions"
-   ]
-  }
- }
