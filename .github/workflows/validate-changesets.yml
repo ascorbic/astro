@@ -52,7 +52,7 @@ jobs:
         id: ai
         uses: actions/ai-inference@v1
         with:
-          model: openai/gpt-4o
+          model: github/gpt-5-mini
           system-prompt: |
             You are a changeset format validator for the Astro project.
 
@@ -62,7 +62,7 @@ jobs:
             3) Must describe user-facing impact, not internal implementation details
             4) Change types: patch (bug fixes), minor (new features), major (breaking changes)
 
-            Return JSON with: {"valid": boolean, "errors": [strings], "suggestions": [strings]}
+            Return JSON with: {"valid": boolean, "errors": [strings], "suggestions": [strings]}. You response must be valid JSON only with no extra commentary or code blocks.
           prompt: |
             Validate the following changeset files for proper format:
 
