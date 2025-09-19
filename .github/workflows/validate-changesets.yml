@@ -34,15 +34,15 @@ jobs:
 
           if [ -s changeset_files.txt ]; then
             echo "has_changesets=true" >> "$GITHUB_OUTPUT"
-            # Create content with safe delimiters (no YAML conflicts)
-            > changesets_content.txt
+            # Create JSON-escaped content to avoid YAML parsing issues
+            echo -n '{"content":"' > changesets_content.json
             while IFS= read -r f; do
               [ -f "$f" ] || continue
-              printf -- 'CHANGESET_FILE_START: %s\n' "$f" >> changesets_content.txt
-              # Replace problematic YAML delimiters with safe alternatives
-              sed 's/^---$/YAML_DELIMITER/g' "$f" >> changesets_content.txt
-              printf '\nCHANGESET_FILE_END\n\n' >> changesets_content.txt
-            done < changeset_files.txt
+              printf '\n=== File: %s ===\n' "$f"
+              cat "$f"
+              printf '\n'
+            done < changeset_files.txt | jq -Rs . | sed 's/^"//' | sed 's/"$//' >> changesets_content.json
+            echo '"}' >> changesets_content.json
           else
             echo "has_changesets=false" >> "$GITHUB_OUTPUT"
           fi
@@ -54,7 +54,7 @@ jobs:
         with:
           prompt-file: .github/prompts/validate-changeset.prompt.yml
           file_input: |
-            changesets: changesets_content.txt
+            changesets: changesets_content.json
           max-tokens: 1000
 
       - name: Read AI response file

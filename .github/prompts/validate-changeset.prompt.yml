@@ -9,14 +9,13 @@ messages:
       3) Must describe user-facing impact, not internal implementation details
       4) Change types: patch (bug fixes), minor (new features), major (breaking changes)
 
-      Note: In the provided files, "YAML_DELIMITER" represents "---" (escaped to avoid parsing issues).
   - role: user
     content: |
-      Validate the changeset files below. Each file is delimited by CHANGESET_FILE_START and CHANGESET_FILE_END markers:
+      I will provide you with changeset file contents in JSON format. Extract the content and validate each changeset file for proper format:
 
       {{changesets}}
 
-      Check each file for proper format and respond with validation results.
+      Parse the JSON, extract the content field, and validate each changeset file according to the requirements. Respond with validation results.
 
 model: openai/gpt-5-mini
 responseFormat: json_schema
