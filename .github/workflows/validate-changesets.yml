@@ -34,12 +34,13 @@ jobs:
 
           if [ -s changeset_files.txt ]; then
             echo "has_changesets=true" >> "$GITHUB_OUTPUT"
-            # concat for file_input
+            # concat for file_input (escape YAML delimiters to avoid parsing issues)
             > all_changesets.md
             while IFS= read -r f; do
               [ -f "$f" ] || continue
-              printf -- '--- File: %s ---\n' "$f" >> all_changesets.md
-              cat "$f" >> all_changesets.md
+              printf -- '=== File: %s ===\n' "$f" >> all_changesets.md
+              # Replace --- with ~~~ to avoid YAML document separator issues
+              sed 's/^---$/~~~/g' "$f" >> all_changesets.md
               printf '\n' >> all_changesets.md
             done < changeset_files.txt
 
