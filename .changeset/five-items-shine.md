@@ -2,4 +2,4 @@
 'astro': patch
 ---
 
-Refactors error handling.
+Removes warning that caused unexpected console spam when using Bun
