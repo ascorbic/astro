@@ -58,13 +58,14 @@ jobs:
           echo "has_changesets=true" >> "$GITHUB_OUTPUT"
           echo "::notice::Found $(wc -l < changeset_files.txt) changeset file(s) to validate"
 
-          # Collect changeset contents
+          # Collect changeset contents using XML-style tags for better AI parsing
           changesets=""
           while IFS= read -r file; do
             if [ -f "$file" ]; then
               echo "Reading changeset file: $file"
-              changesets+="=== File: $file ===\n"
-              changesets+="$(cat "$file")\n\n"
+              changesets+="<changeset file=\"$file\">\n"
+              changesets+="$(cat "$file")\n"
+              changesets+="</changeset>\n\n"
             else
               echo "::warning::Changeset file not found: $file"
             fi
@@ -76,37 +77,72 @@ jobs:
           # Create the validation prompt
           prompt="You are a changeset format validator for the Astro project.
 
-          Validate changesets against these requirements:
-          1) Must start with YAML frontmatter (--- delimiters)
-          2) Description must begin with present-tense verb: Adds, Removes, Fixes, Updates, Refactors, Improves, Deprecates
-          3) Must describe user-facing impact, not internal implementation details
-          4) Change types: patch (bug fixes), minor (new features), major (breaking changes)
+          Validate each changeset file individually against Astro's official guidelines:
+
+          REQUIRED FORMAT:
+          - Must start with YAML frontmatter using --- delimiters
+          - Package name must be specified (e.g., 'astro': patch)
+          - Change type: patch (bug fixes), minor (new features), major (breaking changes)
+
+          DESCRIPTION REQUIREMENTS:
+          - Must begin with present-tense verb that completes 'This PR...'
+          - Accepted verbs: Adds, Removes, Fixes, Updates, Refactors, Improves, Deprecates or similar
+          - Focus on user-facing changes, not technical implementation details
+          - Describe from user's perspective, not developer's
+
+          CONTENT GUIDELINES:
+          - Patch updates: Often one-line, clearly communicate impact
+          - New features: Begin with 'Adds' or similar, more detail than one line, mention new capabilities, optionally include usage example
+          - Breaking changes: Use verbs such as 'Removes'/'Changes'/'Deprecates', provide migration guidance
+          - Use inline code for API references
+          - Avoid internal implementation details
+
+          IMPORTANT: Validate each file separately and provide results for each individual file. Extract the file path from the '<changeset file="path">' tags and include it in your response.
 
           Changesets to validate:
           $changesets"
 
           echo "Prompt length: ${#prompt} characters"
 
-          # Define JSON schema for structured output with proper array support
+          # Define JSON schema for per-file validation tracking
           schema='{
             "type": "object",
             "properties": {
-              "valid": {
+              "overall_valid": {
                 "type": "boolean",
-                "description": "Whether all changesets are properly formatted"
+                "description": "Whether all changesets pass validation"
               },
-              "errors": {
+              "files": {
                 "type": "array",
-                "items": {"type": "string"},
-                "description": "List of specific format errors found"
-              },
-              "suggestions": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "List of improvement suggestions"
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "file": {
+                      "type": "string",
+                      "description": "Path to the changeset file"
+                    },
+                    "valid": {
+                      "type": "boolean",
+                      "description": "Whether this specific file passes validation"
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": {"type": "string"},
+                      "description": "Specific errors found in this file"
+                    },
+                    "suggestions": {
+                      "type": "array",
+                      "items": {"type": "string"},
+                      "description": "Improvement suggestions for this file"
+                    }
+                  },
+                  "required": ["file", "valid", "errors", "suggestions"],
+                  "additionalProperties": false
+                },
+                "description": "Per-file validation results"
               }
             },
-            "required": ["valid", "errors", "suggestions"],
+            "required": ["overall_valid", "files"],
             "additionalProperties": false
           }'
 
@@ -117,7 +153,7 @@ jobs:
           response=$(echo "$prompt" | llm prompt -m github/gpt-5-mini --schema "$schema" --no-stream 2>&1) || {
             echo "::error::Failed to run llm CLI. Exit code: $?"
             echo "Error output: $response"
-            response='{"valid": false, "errors": ["Failed to get AI response"], "suggestions": []}'
+            response='{"overall_valid": false, "files": [{"file": "unknown", "valid": false, "errors": ["Failed to get AI response"], "suggestions": []}]}'
           }
 
           echo "LLM response received (first 500 chars):"
@@ -129,19 +165,15 @@ jobs:
           echo "Response saved to validation_response.json"
 
           # Extract validation status
-          if echo "$response" | jq -e '.valid == true' > /dev/null 2>&1; then
+          if echo "$response" | jq -e '.overall_valid == true' > /dev/null 2>&1; then
             echo "::notice::Validation passed"
             echo "valid=true" >> "$GITHUB_OUTPUT"
           else
             echo "::warning::Validation failed or could not parse response"
             echo "valid=false" >> "$GITHUB_OUTPUT"
 
-            # Show errors if present
-            errors=$(echo "$response" | jq -r '.errors[]?' 2>/dev/null)
-            if [ -n "$errors" ]; then
-              echo "Validation errors found:"
-              echo "$errors"
-            fi
+            # Show per-file errors if present
+            echo "$response" | jq -r '.files[]? | select(.errors | length > 0) | "File: " + .file + " - Errors: " + (.errors | join(", "))' 2>/dev/null || true
           fi
 
       - name: Comment validation results on PR
@@ -163,34 +195,7 @@ jobs:
               };
             }
 
-            let comment = "## 📝 Changeset Validation Results\n\n";
-
-            if (validation.valid) {
-              comment += "✅ **All changesets are properly formatted!**\n\n";
-            } else {
-              comment += "❌ **Changeset validation failed**\n\n";
-
-              if (validation.errors && validation.errors.length > 0) {
-                comment += "### Errors Found:\n";
-                validation.errors.forEach(error => {
-                  comment += `- ${error}\n`;
-                });
-                comment += "\n";
-              }
-            }
-
-            if (validation.suggestions && validation.suggestions.length > 0) {
-              comment += "### Suggestions:\n";
-              validation.suggestions.forEach(suggestion => {
-                comment += `- ${suggestion}\n`;
-              });
-              comment += "\n";
-            }
-
-            comment += "---\n";
-            comment += "*📖 See [Astro's changeset guide](https://contribute.docs.astro.build/docs-for-code-changes/changesets/) for details.*";
-
-            // Find and update or create comment
+            // Find existing comment first
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -202,6 +207,86 @@ jobs:
               c.user?.type === "Bot" && c.body?.includes(marker)
             );
 
+            // Handle both old and new schema formats for backwards compatibility
+            const isNewFormat = validation.overall_valid !== undefined;
+            const overallValid = isNewFormat ? validation.overall_valid : validation.valid;
+
+            // Count total errors across all files
+            let totalErrors = 0;
+            if (isNewFormat && validation.files) {
+              totalErrors = validation.files.reduce((sum, file) => sum + (file.errors?.length || 0), 0);
+            } else if (validation.errors) {
+              totalErrors = validation.errors.length;
+            }
+
+            // If validation passes and there are no errors, don't comment
+            if (overallValid && totalErrors === 0) {
+              // Delete existing comment if it exists
+              if (existingComment) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existingComment.id
+                });
+                console.log("Deleted existing comment - validation passed");
+              }
+              return; // Don't create a new comment
+            }
+
+            // Only comment if there are actual errors
+            let comment = "## 📝 Changeset Validation Results\n\n";
+            comment += "❌ **Changeset validation failed**\n\n";
+
+            if (isNewFormat && validation.files) {
+              // New format: show per-file results
+              const failedFiles = validation.files.filter(file => !file.valid || (file.errors && file.errors.length > 0));
+
+              if (failedFiles.length > 0) {
+                comment += "### Issues Found:\n\n";
+
+                failedFiles.forEach(file => {
+                  comment += `#### [`${file.file}`](${file.file})\n`;
+
+                  if (file.errors && file.errors.length > 0) {
+                    comment += "**Errors:**\n";
+                    file.errors.forEach(error => {
+                      comment += `- ${error}\n`;
+                    });
+                  }
+
+                  if (file.suggestions && file.suggestions.length > 0) {
+                    comment += "**Suggestions:**\n";
+                    file.suggestions.forEach(suggestion => {
+                      comment += `- ${suggestion}\n`;
+                    });
+                  }
+
+                  comment += "\n";
+                });
+              }
+            } else {
+              // Old format: fallback for backwards compatibility
+              if (validation.errors && validation.errors.length > 0) {
+                comment += "### Errors Found:\n";
+                validation.errors.forEach(error => {
+                  comment += `- ${error}\n`;
+                });
+                comment += "\n";
+              }
+
+              if (validation.suggestions && validation.suggestions.length > 0) {
+                comment += "### Suggestions:\n";
+                validation.suggestions.forEach(suggestion => {
+                  comment += `- ${suggestion}\n`;
+                });
+                comment += "\n";
+              }
+            }
+
+            comment += "---\n";
+            comment += "*📖 See [Astro's changeset guide](https://contribute.docs.astro.build/docs-for-code-changes/changesets/) for details.*";
+
+            // Update or create comment only for failures
             if (existingComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
@@ -218,6 +303,6 @@ jobs:
               });
             }
 
-            if (!validation.valid) {
+            if (!overallValid) {
               core.setFailed("Changeset validation failed - see PR comment for details");
             }
