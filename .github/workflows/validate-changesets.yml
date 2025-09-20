@@ -101,7 +101,7 @@ jobs:
           - Validate each file separately and provide results for each individual file
           - Extract the file path from the '<changeset file="path">' tags and include it in your response
           - Format all suggestions and examples using proper markdown with code blocks for code examples
-          - Use ```yaml for YAML examples and ```markdown for changeset examples
+          - Use triple backticks with 'yaml' for YAML examples and 'markdown' for changeset examples
 
           Changesets to validate:
           $changesets"
