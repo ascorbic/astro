@@ -97,7 +97,11 @@ jobs:
           - Use inline code for API references
           - Avoid internal implementation details
 
-          IMPORTANT: Validate each file separately and provide results for each individual file. Extract the file path from the '<changeset file="path">' tags and include it in your response.
+          IMPORTANT:
+          - Validate each file separately and provide results for each individual file
+          - Extract the file path from the '<changeset file="path">' tags and include it in your response
+          - Format all suggestions and examples using proper markdown with code blocks for code examples
+          - Use ```yaml for YAML examples and ```markdown for changeset examples
 
           Changesets to validate:
           $changesets"
@@ -253,7 +257,7 @@ jobs:
                 comment += "### Issues Found:\n\n";
 
                 failedFiles.forEach(file => {
-                  comment += "#### [\\`" + file.file + "\\`](" + file.file + ")\n\n";
+                  comment += "#### [`" + file.file + "`](" + file.file + ")\n\n";
 
                   if (file.errors && file.errors.length > 0) {
                     comment += "**Errors:**\n";
