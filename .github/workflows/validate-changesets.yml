@@ -152,6 +152,8 @@ jobs:
 
           echo "Using JSON schema for structured output"
 
+          echo "$prompt"
+
           # Run validation with llm CLI using JSON schema
           echo "Running llm CLI with github/gpt-5-mini model and JSON schema"
           response=$(echo "$prompt" | llm prompt -m github/gpt-5-mini --schema "$schema" --no-stream 2>&1) || {
