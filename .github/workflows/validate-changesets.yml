@@ -36,15 +36,15 @@ jobs:
       - name: Collect and validate changesets
         id: validate
         run: |
-          echo "::debug::Starting changeset validation"
+          echo "Starting changeset validation"
 
           # Find changed changeset files
-          echo "::debug::Looking for changed files between ${{ github.event.pull_request.base.sha }} and ${{ github.sha }}"
+          echo "Looking for changed files between ${{ github.event.pull_request.base.sha }} and ${{ github.sha }}"
           git diff --name-only --diff-filter=AM \
             "${{ github.event.pull_request.base.sha }}...${{ github.sha }}" \
             -- '.changeset/*.md' | grep -v 'README.md' > changeset_files.txt || true
 
-          echo "::debug::Found changeset files:"
+          echo "Found changeset files:"
           cat changeset_files.txt || true
 
           if [ ! -s changeset_files.txt ]; then
@@ -60,7 +60,7 @@ jobs:
           changesets=""
           while IFS= read -r file; do
             if [ -f "$file" ]; then
-              echo "::debug::Reading changeset file: $file"
+              echo "Reading changeset file: $file"
               changesets+="=== File: $file ===\n"
               changesets+="$(cat "$file")\n\n"
             else
@@ -68,7 +68,7 @@ jobs:
             fi
           done < changeset_files.txt
 
-          echo "::debug::Collected changesets content (first 500 chars):"
+          echo "Collected changesets content (first 500 chars):"
           echo "$changesets" | head -c 500
 
           # Create the validation prompt
@@ -83,26 +83,27 @@ jobs:
           Changesets to validate:
           $changesets"
 
-          echo "::debug::Prompt length: ${#prompt} characters"
+          echo "Prompt length: ${#prompt} characters"
 
           # Define simple schema for structured output
           schema='valid bool, errors array, suggestions array'
-          echo "::debug::Using simple schema: $schema"
+          echo "Using simple schema: $schema"
 
           # Run validation with llm CLI using simple schema
-          echo "::debug::Running llm CLI with github/gpt-5-mini model and simple schema"
+          echo "Running llm CLI with github/gpt-5-mini model and simple schema"
           response=$(echo "$prompt" | llm prompt -m github/gpt-5-mini --schema "$schema" --no-stream 2>&1) || {
             echo "::error::Failed to run llm CLI. Exit code: $?"
-            echo "::debug::Error output: $response"
+            echo "Error output: $response"
             response='{"valid": false, "errors": ["Failed to get AI response"], "suggestions": []}'
           }
 
-          echo "::debug::LLM response received (first 500 chars):"
+          echo "LLM response received (first 500 chars):"
           echo "$response" | head -c 500
+          echo ""
 
           # Save response for parsing
           echo "$response" > validation_response.json
-          echo "::debug::Response saved to validation_response.json"
+          echo "Response saved to validation_response.json"
 
           # Extract validation status
           if echo "$response" | jq -e '.valid == true' > /dev/null 2>&1; then
@@ -112,10 +113,10 @@ jobs:
             echo "::warning::Validation failed or could not parse response"
             echo "valid=false" >> "$GITHUB_OUTPUT"
 
-            # Debug: show errors if present
+            # Show errors if present
             errors=$(echo "$response" | jq -r '.errors[]?' 2>/dev/null)
             if [ -n "$errors" ]; then
-              echo "::debug::Validation errors found:"
+              echo "Validation errors found:"
               echo "$errors"
             fi
           fi
