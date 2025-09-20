@@ -189,9 +189,13 @@ jobs:
               validation = JSON.parse(raw);
             } catch (e) {
               validation = {
-                valid: false,
-                errors: ["Failed to parse validation response"],
-                suggestions: []
+                overall_valid: false,
+                files: [{
+                  file: "unknown",
+                  valid: false,
+                  errors: ["Failed to parse validation response"],
+                  suggestions: []
+                }]
               };
             }
 
@@ -214,7 +218,9 @@ jobs:
             // Count total errors across all files
             let totalErrors = 0;
             if (isNewFormat && validation.files) {
-              totalErrors = validation.files.reduce((sum, file) => sum + (file.errors?.length || 0), 0);
+              totalErrors = validation.files.reduce((sum, file) => {
+                return sum + (file.errors ? file.errors.length : 0);
+              }, 0);
             } else if (validation.errors) {
               totalErrors = validation.errors.length;
             }
@@ -239,7 +245,9 @@ jobs:
 
             if (isNewFormat && validation.files) {
               // New format: show per-file results
-              const failedFiles = validation.files.filter(file => !file.valid || (file.errors && file.errors.length > 0));
+              const failedFiles = validation.files.filter(file => {
+                return !file.valid || (file.errors && file.errors.length > 0);
+              });
 
               if (failedFiles.length > 0) {
                 comment += "### Issues Found:\n\n";
