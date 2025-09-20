@@ -36,27 +36,40 @@ jobs:
       - name: Collect and validate changesets
         id: validate
         run: |
+          echo "::debug::Starting changeset validation"
+
           # Find changed changeset files
+          echo "::debug::Looking for changed files between ${{ github.event.pull_request.base.sha }} and ${{ github.sha }}"
           git diff --name-only --diff-filter=AM \
             "${{ github.event.pull_request.base.sha }}...${{ github.sha }}" \
             -- '.changeset/*.md' | grep -v 'README.md' > changeset_files.txt || true
 
+          echo "::debug::Found changeset files:"
+          cat changeset_files.txt || true
+
           if [ ! -s changeset_files.txt ]; then
-            echo "No changeset files to validate"
+            echo "::notice::No changeset files to validate"
             echo "has_changesets=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "has_changesets=true" >> "$GITHUB_OUTPUT"
+          echo "::notice::Found $(wc -l < changeset_files.txt) changeset file(s) to validate"
 
           # Collect changeset contents
           changesets=""
           while IFS= read -r file; do
             if [ -f "$file" ]; then
+              echo "::debug::Reading changeset file: $file"
               changesets+="=== File: $file ===\n"
               changesets+="$(cat "$file")\n\n"
+            else
+              echo "::warning::Changeset file not found: $file"
             fi
           done < changeset_files.txt
+
+          echo "::debug::Collected changesets content (first 500 chars):"
+          echo "$changesets" | head -c 500
 
           # Create the validation prompt
           prompt="You are a changeset format validator for the Astro project.
@@ -68,26 +81,43 @@ jobs:
           4) Change types: patch (bug fixes), minor (new features), major (breaking changes)
 
           Changesets to validate:
-          $changesets
+          $changesets"
 
-          Respond with a JSON object containing:
-          - valid (boolean): whether all changesets are properly formatted
-          - errors (array of strings): specific format errors found
-          - suggestions (array of strings): improvement suggestions
+          echo "::debug::Prompt length: ${#prompt} characters"
 
-          Return ONLY the JSON object, no other text."
+          # Define simple schema for structured output
+          schema='valid bool, errors array, suggestions array'
+          echo "::debug::Using simple schema: $schema"
 
-          # Run validation with llm CLI
-          response=$(echo "$prompt" | llm prompt -m github/gpt-5-mini --no-stream 2>/dev/null || echo '{"valid": false, "errors": ["Failed to get AI response"], "suggestions": []}')
+          # Run validation with llm CLI using simple schema
+          echo "::debug::Running llm CLI with github/gpt-5-mini model and simple schema"
+          response=$(echo "$prompt" | llm prompt -m github/gpt-5-mini --schema "$schema" --no-stream 2>&1) || {
+            echo "::error::Failed to run llm CLI. Exit code: $?"
+            echo "::debug::Error output: $response"
+            response='{"valid": false, "errors": ["Failed to get AI response"], "suggestions": []}'
+          }
+
+          echo "::debug::LLM response received (first 500 chars):"
+          echo "$response" | head -c 500
 
           # Save response for parsing
           echo "$response" > validation_response.json
+          echo "::debug::Response saved to validation_response.json"
 
           # Extract validation status
           if echo "$response" | jq -e '.valid == true' > /dev/null 2>&1; then
+            echo "::notice::Validation passed"
             echo "valid=true" >> "$GITHUB_OUTPUT"
           else
+            echo "::warning::Validation failed or could not parse response"
             echo "valid=false" >> "$GITHUB_OUTPUT"
+
+            # Debug: show errors if present
+            errors=$(echo "$response" | jq -r '.errors[]?' 2>/dev/null)
+            if [ -n "$errors" ]; then
+              echo "::debug::Validation errors found:"
+              echo "$errors"
+            fi
           fi
 
       - name: Comment validation results on PR
