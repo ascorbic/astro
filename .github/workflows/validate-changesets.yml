@@ -253,19 +253,19 @@ jobs:
                 comment += "### Issues Found:\n\n";
 
                 failedFiles.forEach(file => {
-                  comment += `#### [`${file.file}`](${file.file})\n`;
+                  comment += "#### [\\`" + file.file + "\\`](" + file.file + ")\\n";
 
                   if (file.errors && file.errors.length > 0) {
                     comment += "**Errors:**\n";
                     file.errors.forEach(error => {
-                      comment += `- ${error}\n`;
+                      comment += "- " + error + "\\n";
                     });
                   }
 
                   if (file.suggestions && file.suggestions.length > 0) {
                     comment += "**Suggestions:**\n";
                     file.suggestions.forEach(suggestion => {
-                      comment += `- ${suggestion}\n`;
+                      comment += "- " + suggestion + "\\n";
                     });
                   }
 
@@ -277,7 +277,7 @@ jobs:
               if (validation.errors && validation.errors.length > 0) {
                 comment += "### Errors Found:\n";
                 validation.errors.forEach(error => {
-                  comment += `- ${error}\n`;
+                  comment += "- " + error + "\\n";
                 });
                 comment += "\n";
               }
@@ -285,7 +285,7 @@ jobs:
               if (validation.suggestions && validation.suggestions.length > 0) {
                 comment += "### Suggestions:\n";
                 validation.suggestions.forEach(suggestion => {
-                  comment += `- ${suggestion}\n`;
+                  comment += "- " + suggestion + "\\n";
                 });
                 comment += "\n";
               }
