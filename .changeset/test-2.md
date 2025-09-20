@@ -1,4 +1,5 @@
 ---
+'@astrojs/react': patch
 'astro': patch
 ---
 

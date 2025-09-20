@@ -1,5 +1,5 @@
 ---
-'astro': major
+'astro': minor
 ---
 
 Removes the deprecated `<ViewTransitions />` component

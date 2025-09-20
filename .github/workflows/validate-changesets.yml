@@ -151,11 +151,6 @@ jobs:
             "additionalProperties": false
           }'
 
-          echo "Using JSON schema for structured output"
-
-          echo "$prompt"
-
-          # Run validation with llm CLI using JSON schema
           echo "Running llm CLI"
           response=$(echo "$prompt" | llm prompt -m github/gpt-4o --schema "$schema" --no-stream 2>&1) || {
             echo "::error::Failed to run llm CLI. Exit code: $?"
@@ -163,8 +158,8 @@ jobs:
             response='{"overall_valid": false, "files": [{"file": "unknown", "valid": false, "errors": ["Failed to get AI response"], "suggestions": []}]}'
           }
 
-          echo "LLM response received (first 500 chars):"
-          echo "$response" | head -c 500
+          echo "LLM response received:"
+          echo "$response"
           echo ""
 
           # Save response for parsing
