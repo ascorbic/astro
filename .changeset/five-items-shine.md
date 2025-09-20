@@ -2,4 +2,4 @@
 'astro': patch
 ---
 
-Breaking change: internal refactor
+Refactors error handling.
