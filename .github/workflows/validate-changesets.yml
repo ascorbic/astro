@@ -35,6 +35,8 @@ jobs:
 
       - name: Collect and validate changesets
         id: validate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "Starting changeset validation"
 
