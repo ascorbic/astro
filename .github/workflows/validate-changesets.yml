@@ -87,12 +87,33 @@ jobs:
 
           echo "Prompt length: ${#prompt} characters"
 
-          # Define simple schema for structured output
-          schema='valid bool, errors array, suggestions array'
-          echo "Using simple schema: $schema"
+          # Define JSON schema for structured output with proper array support
+          schema='{
+            "type": "object",
+            "properties": {
+              "valid": {
+                "type": "boolean",
+                "description": "Whether all changesets are properly formatted"
+              },
+              "errors": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of specific format errors found"
+              },
+              "suggestions": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "List of improvement suggestions"
+              }
+            },
+            "required": ["valid", "errors", "suggestions"],
+            "additionalProperties": false
+          }'
 
-          # Run validation with llm CLI using simple schema
-          echo "Running llm CLI with github/gpt-5-mini model and simple schema"
+          echo "Using JSON schema for structured output"
+
+          # Run validation with llm CLI using JSON schema
+          echo "Running llm CLI with github/gpt-5-mini model and JSON schema"
           response=$(echo "$prompt" | llm prompt -m github/gpt-5-mini --schema "$schema" --no-stream 2>&1) || {
             echo "::error::Failed to run llm CLI. Exit code: $?"
             echo "Error output: $response"
