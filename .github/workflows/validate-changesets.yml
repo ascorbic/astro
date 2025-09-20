@@ -23,121 +23,144 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Collect changed changeset files
-        id: changed
-        shell: bash
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install llm CLI
         run: |
-          set -eo pipefail
+          python -m pip install --upgrade pip
+          pip install "llm-github-models"
+
+      - name: Collect and validate changesets
+        id: validate
+        run: |
+          # Find changed changeset files
           git diff --name-only --diff-filter=AM \
             "${{ github.event.pull_request.base.sha }}...${{ github.sha }}" \
             -- '.changeset/*.md' | grep -v 'README.md' > changeset_files.txt || true
 
-          if [ -s changeset_files.txt ]; then
-            echo "has_changesets=true" >> "$GITHUB_OUTPUT"
-            # Create JSON-escaped content to avoid YAML parsing issues
-            echo -n '{"content":"' > changesets_content.json
-            while IFS= read -r f; do
-              [ -f "$f" ] || continue
-              printf '\n=== File: %s ===\n' "$f"
-              cat "$f"
-              printf '\n'
-            done < changeset_files.txt | jq -Rs . | sed 's/^"//' | sed 's/"$//' >> changesets_content.json
-            echo '"}' >> changesets_content.json
-          else
+          if [ ! -s changeset_files.txt ]; then
+            echo "No changeset files to validate"
             echo "has_changesets=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Validate changeset format with AI
-        if: steps.changed.outputs.has_changesets == 'true'
-        id: ai
-        uses: actions/ai-inference@v1
-        with:
-          prompt-file: .github/prompts/validate-changeset.prompt.yml
-          file_input: |
-            changesets: changesets_content.json
-          max-tokens: 1000
-
-      - name: Read AI response file
-        if: steps.changed.outputs.has_changesets == 'true'
-        id: parsed
-        shell: bash
-        run: |
-          set -eo pipefail
-          resp_file="${{ steps.ai.outputs.response-file }}"
-          if [ -z "$resp_file" ] || [ ! -f "$resp_file" ]; then
-            echo "AI response file missing" >&2
-            echo 'valid=false' >> "$GITHUB_OUTPUT"
-            echo 'json={"valid":false,"errors":["Missing AI response file"],"suggestions":[]}' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Show raw for debugging on run page
-          echo "---- AI raw response ----"
-          sed -n '1,200p' "$resp_file" || true
-          echo "-------------------------"
 
-          # Try to normalize to one-line JSON for github-script
-          # If it's already one line, this is a no-op.
-          json=$(tr -d '\n' < "$resp_file" || cat "$resp_file")
-          echo "json<<JSON" >> "$GITHUB_OUTPUT"
-          echo "$json" >> "$GITHUB_OUTPUT"
-          echo "JSON" >> "$GITHUB_OUTPUT"
+          echo "has_changesets=true" >> "$GITHUB_OUTPUT"
 
-          # Try to detect validity flag (best-effort; schema should enforce it)
-          if echo "$json" | grep -q '"valid":[[:space:]]*true'; then
+          # Collect changeset contents
+          changesets=""
+          while IFS= read -r file; do
+            if [ -f "$file" ]; then
+              changesets+="=== File: $file ===\n"
+              changesets+="$(cat "$file")\n\n"
+            fi
+          done < changeset_files.txt
+
+          # Create the validation prompt
+          prompt="You are a changeset format validator for the Astro project.
+
+          Validate changesets against these requirements:
+          1) Must start with YAML frontmatter (--- delimiters)
+          2) Description must begin with present-tense verb: Adds, Removes, Fixes, Updates, Refactors, Improves, Deprecates
+          3) Must describe user-facing impact, not internal implementation details
+          4) Change types: patch (bug fixes), minor (new features), major (breaking changes)
+
+          Changesets to validate:
+          $changesets
+
+          Respond with a JSON object containing:
+          - valid (boolean): whether all changesets are properly formatted
+          - errors (array of strings): specific format errors found
+          - suggestions (array of strings): improvement suggestions
+
+          Return ONLY the JSON object, no other text."
+
+          # Run validation with llm CLI
+          response=$(echo "$prompt" | llm prompt -m github/gpt-5-mini --no-stream 2>/dev/null || echo '{"valid": false, "errors": ["Failed to get AI response"], "suggestions": []}')
+
+          # Save response for parsing
+          echo "$response" > validation_response.json
+
+          # Extract validation status
+          if echo "$response" | jq -e '.valid == true' > /dev/null 2>&1; then
             echo "valid=true" >> "$GITHUB_OUTPUT"
           else
             echo "valid=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Comment validation results on PR
-        if: steps.changed.outputs.has_changesets == 'true'
+        if: steps.validate.outputs.has_changesets == 'true'
         uses: actions/github-script@v7
         with:
           script: |
-            const raw = `${{ steps.parsed.outputs.json }}`;
+            const fs = require('fs');
             let validation;
+
             try {
+              const raw = fs.readFileSync('validation_response.json', 'utf8');
               validation = JSON.parse(raw);
             } catch (e) {
-              validation = { valid: false, errors: ["Failed to parse AI JSON"], suggestions: [], _raw: raw };
+              validation = {
+                valid: false,
+                errors: ["Failed to parse validation response"],
+                suggestions: []
+              };
             }
 
             let comment = "## 📝 Changeset Validation Results\n\n";
+
             if (validation.valid) {
               comment += "✅ **All changesets are properly formatted!**\n\n";
             } else {
               comment += "❌ **Changeset validation failed**\n\n";
-              if (Array.isArray(validation.errors) && validation.errors.length) {
+
+              if (validation.errors && validation.errors.length > 0) {
                 comment += "### Errors Found:\n";
-                for (const e of validation.errors) comment += `- ${e}\n`;
+                validation.errors.forEach(error => {
+                  comment += `- ${error}\n`;
+                });
                 comment += "\n";
               }
             }
-            if (Array.isArray(validation.suggestions) && validation.suggestions.length) {
+
+            if (validation.suggestions && validation.suggestions.length > 0) {
               comment += "### Suggestions:\n";
-              for (const s of validation.suggestions) comment += `- ${s}\n`;
+              validation.suggestions.forEach(suggestion => {
+                comment += `- ${suggestion}\n`;
+              });
               comment += "\n";
             }
+
             comment += "---\n";
             comment += "*📖 See [Astro's changeset guide](https://contribute.docs.astro.build/docs-for-code-changes/changesets/) for details.*";
 
-            // Upsert bot comment
+            // Find and update or create comment
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
+
             const marker = "## 📝 Changeset Validation Results";
-            const prev = comments.find(c => c.user?.type === "Bot" && c.body?.includes(marker));
-            if (prev) {
+            const existingComment = comments.find(c =>
+              c.user?.type === "Bot" && c.body?.includes(marker)
+            );
+
+            if (existingComment) {
               await github.rest.issues.updateComment({
-                owner: context.repo.owner, repo: context.repo.repo,
-                comment_id: prev.id, body: comment
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: comment
               });
             } else {
               await github.rest.issues.createComment({
-                owner: context.repo.owner, repo: context.repo.repo,
-                issue_number: context.issue.number, body: comment
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: comment
               });
             }
 
